@@ -1,83 +1,63 @@
+#include "utilityFunctions.h"
 #include "greathalt.h"
-#include "rapidjson/filereadstream.h"
-#include <openssl/sha.h>
 
-string getSHA256 ( char *source );
-string convertToHexString ( unsigned char* data, int dataSize ) ;
-enum UserType authenticate(string dataFile)
-{  
-    string username, password;
-    std::istringstream stream(dataFile);
-    std::getline(stream, username);
-    std::getline(stream, password);
-    FILE* fp = fopen("UserData.json", "rb");
-    if (!fp) {
-        cerr << "Error opening file" << endl;
-        return invalid;
-    }
- 
-    char readBuffer[65536];
-    rapidjson::FileReadStream is(fp, readBuffer, sizeof(readBuffer));
-    rapidjson::Document doc;
-    doc.ParseStream(is);
-    fclose(fp);
- 
-    if (doc.HasParseError()) {
-        cerr << "Error parsing JSON" << endl;
-        return invalid;
-    }
- 
-    if (!doc.HasMember("Users") || !doc["Users"].IsArray()) {
-        cerr << "Invalid JSON format" << endl;
-        return invalid;
-    }
- 
-    const rapidjson::Value& users = doc["Users"];
+
+string SHA256(string str) {
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256_CTX sha256;
     SHA256_Init(&sha256);
-    SHA256_Update(&sha256, password.c_str(), password.size());
+    SHA256_Update(&sha256, str.c_str(), str.size());
     SHA256_Final(hash, &sha256);
     stringstream ss;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+    for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
         ss << hex << setw(2) << setfill('0') << (int)hash[i];
     }
-    string passwordHash = ss.str();
-    for (auto& user : users.GetArray()) {
-        if (user["loginname"].GetString() == username && user["pwSHA256ChkSum"].GetString() == passwordHash) {
-            return (user["role"].GetString() == string("admin")) ? UserType::admin : UserType::user ;
+    return ss.str();
+}
+
+Document parseJsonFromFile(const string& filename) {
+    FILE* fp = fopen(filename.c_str(), "rb");
+    char readBuffer[65536]; 
+    FileReadStream is(fp, readBuffer, sizeof(readBuffer)); 
+
+    Document doc;
+    doc.ParseStream(is);
+
+    fclose(fp); 
+    return doc; 
+}
+
+
+enum UserType authenticate(string dataFile) {
+
+   Document doc = parseJsonFromFile(dataFile);
+
+    string loginId;
+    string password;
+
+    cout << "Please enter your login ID: ";
+    cin >> loginId;
+    cout << "Please enter your password: ";
+    cin >> password;
+
+    string hashedPassword = SHA256(password);
+    const Value& usersArray = doc["Users"];
+
+    for (SizeType i = 0; i < usersArray.Size(); i++) {
+        const Value& users = usersArray[i];
+        if (users.IsObject() && users.HasMember("loginname") && users.HasMember("pwSHA256ChkSum")) {
+            if (users["loginname"].IsString() && users["pwSHA256ChkSum"].IsString()) {
+                if (users["loginname"].GetString() == loginId && users["pwSHA256ChkSum"].GetString() == hashedPassword) {
+                    if (users.HasMember("role") && users["role"].IsString() && strcmp(users["role"].GetString(), "admin") == 0) {
+                        return admin;
+                    } else {
+                        return user;
+                    }
+                }
+            }
         }
     }
+
     return invalid;
- 
 }
- 
-string getSHA256 ( char *source )
-{
-    const EVP_MD *md ;
-    EVP_MD_CTX *mdctx ;
-    unsigned int md_len, i ;
-    unsigned char md_value[ EVP_MAX_MD_SIZE ] = "" ;
-    string chksum ;
- 
-    OpenSSL_add_all_digests( ) ;
-    md = EVP_get_digestbyname ( "SHA256" ) ;
-    mdctx = EVP_MD_CTX_new( ) ;
-    EVP_MD_CTX_init ( mdctx ) ;
-    EVP_DigestInit_ex ( mdctx, md, NULL ) ;
-    EVP_DigestUpdate ( mdctx, source, strlen ( source ) ) ;
-    EVP_DigestFinal_ex ( mdctx, md_value, &md_len ) ;
-    EVP_MD_CTX_free ( mdctx ) ;
-    chksum = convertToHexString ( md_value, md_len ) ;
-    return chksum ;
-}
- string convertToHexString ( unsigned char* data, int dataSize )
-{
-    ostringstream oss ;
-    oss << hex << setfill ( '0' ) ;
- 
-    for ( int i = 0 ; i < dataSize ; ++i )
-        oss << setw( 2 ) << static_cast<unsigned int>( data[ i ] ) ;
- 
-    return oss.str( ) ;
-}
+
