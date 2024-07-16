@@ -13,6 +13,7 @@
 #include <sqlite3.h>
 #include <sstream>
 #include <string>
+#include <openssl/sha.h>
 
 #include "parkingSlot.h"
 #include "garage.h"
